@@ -5,6 +5,7 @@ date: "2023-08-28"
 ---
 
 ```{r}
+library(tidyverse)
 library(sf)
 library(terra)
 
@@ -28,7 +29,7 @@ elev = rast('prepared/DHM/DHM25.tif')
 crs(elev) = "EPSG:21781"
 
 # Join the elevation data
-base::merge(tick, extract(elev, st_transform(tick,crs(elev))))
+cross_join(tick, terra::extract(elev, st_transform(tick,crs(elev))))
 ```
 
 
