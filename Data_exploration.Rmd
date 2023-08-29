@@ -1,0 +1,50 @@
+---
+title: "r_DataExp"
+output: html_document
+date: "2023-08-28"
+---
+
+```{r}
+library(sf)
+library(terra)
+
+```
+
+
+```{r}
+tick <- st_read('prepared/Tick_Reports/tick_reports_dummy.gpkg')
+plot(st_geometry(tick))
+
+```
+## Covariates
+
+### Elevation
+
+```{r}
+# Import elevation raster
+elev = rast('prepared/DHM/DHM25.tif')
+
+# Assign correct CRS
+crs(elev) = "EPSG:21781"
+
+# Join the elevation data
+base::merge(tick, extract(elev, st_transform(tick,crs(elev))))
+```
+
+
+
+
+### Weather
+```{r}
+prec = rast('prepared/Weather/RhiresM/RhiresM_ch01r.swiss.lv95_201501010000_201512010000.nc')
+prec = subst(prec, NA, 0)
+
+df = extract(prec, st_transform(tick, crs(prec))) # NOT WORKING
+
+df
+```
+
+```{r}
+
+```
+
