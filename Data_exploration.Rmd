@@ -8,16 +8,44 @@ date: "2023-08-28"
 library(tidyverse)
 library(sf)
 library(terra)
-
+library(ncdf4)
 ```
 
 
 ```{r}
-tick <- st_read('prepared/Tick_Reports/tick_reports_dummy.gpkg')
+mask = rast("prepared/Mask/Mask.tif")
+
+int_month = 5
+```
+
+
+```{r}
+tick <- st_read('prepared/Tick_Reports/tick_reports_training.gpkg')
 plot(st_geometry(tick))
 
 ```
+```{r}
+tick$month=format(tick$datetime,'%m')
+
+tick_may = tick[tick$month == str_pad(int_month, 2, pad = "0"),]
+n_obs = nrow(tick_may)
+
+tick_may_tr = vect(tick_may)
+
+tick_raster = rasterize(tick_may_tr, mask, fun = 'sum') 
+
+tick_raster = subst(tick_raster, NA, 0)
+```
+
 ## Covariates
+
+```{r}
+resample_proj = function(rast_1, method = 'average'){
+  x = project(rast_1, crs(mask))
+  resample(x, mask, method = 'average')
+}
+```
+
 
 ### Elevation
 
@@ -29,23 +57,110 @@ elev = rast('prepared/DHM/DHM25.tif')
 crs(elev) = "EPSG:21781"
 
 # Join the elevation data
-cross_join(tick, terra::extract(elev, st_transform(tick,crs(elev))))
+elev_res2mask = resample(x = project(elev, crs(mask)), y = mask, method = 'average')
+
+stack = c(tick_raster, elev_res2mask)
+
+plot(stack)
 ```
-
-
-
-
 ### Weather
+
 ```{r}
-prec = rast('prepared/Weather/RhiresM/RhiresM_ch01r.swiss.lv95_201501010000_201512010000.nc')
-prec = subst(prec, NA, 0)
+# Function to calculate the aggregated monthly data of weather variables for May
+may_avg = function(dir_name, na_val = 0){
 
-df = extract(prec, st_transform(tick, crs(prec))) # NOT WORKING
+  files = list.files(dir_name, pattern="*.nc$")
+  
+  files = files[1:7] # Hard code 
+  
+  k = 1
+  
+  for (i in files) {
+    
+    ras = rast(paste0(dir_name,i))
+          
+    crs(ras) = 'EPSG: 2056'
 
-df
+    ras = subst(ras, NA, na_val)
+    
+    # Get May data
+    may = ras[[int_month]]
+    
+    if (nlyr(ras) == 12){
+      if (k == 1){
+        may_stack = may
+      } else {
+        may_stack = c(may_stack, may)
+    }
+    }
+    
+    k = k + 1
+    
+  }
+  
+  mean_may = app(may_stack, mean)
+  crs(mean_may) = crs(ras)
+  
+  
+  mean_may
+}
 ```
 
+#### Precipitation
+```{r}
+P_may = may_avg('prepared/Weather/RhiresM/')
+
+stack = c(stack, resample_proj(P_may))
+```
+#### Relative Humidity 
+```{r}
+RH_may = may_avg('prepared/Weather/SrelM/', NA)
+
+stack = c(stack, resample_proj(RH_may))
+```
+
+#### Temperature
+```{r}
+T_may = may_avg('prepared/Weather/TabsM/', NA)
+
+stack = c(stack, resample_proj(T_may))
+```
+### Covariate visualization
 ```{r}
 
+writeRaster(stack,"test.tif", overwrite = T)
+
+plot(stack)
+
+```
+
+### Additional covariates (Soil)
+
+```{r}
+if (!('predictors' %in% list.files('prepared'))){
+  options(timeout=600)
+  download.file('https://www.envidat.ch/dataset/4ab13d14-6f96-41fd-96b0-b3ea45278b3d/resource/e0faab13-0d1b-492a-8539-5370d48b9e35/download/predictors.zip', 'prepared/predictors.zip')
+  unzip('prepared/predictors.zip', exdir = 'prepared')
+  unlink('prepared/predictors.zip', recursive = T)
+}
+```
+```{r}
+soilH = rast('prepared/Predictors/SPEEDMIND_SoilH.tif') #CRS 3395
+
+plot(soilH)
+```
+
+
+### LC Areal
+```{r}
+AS_LC <- rast('prepared/Arealstatistik/AS18_72.tif')
+
+plot(AS_LC)
+```
+
+## LC_Corine
+
+```{r}
+st_r('prepared/Corine_Landcover/CLC_CH_2018.shp')
 ```
 
