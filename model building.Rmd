@@ -1,0 +1,132 @@
+---
+title: "Tick model building"
+author: "Eric Petermann"
+date: "2023-08-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages}
+library(sf)
+library(raster)
+library(blockCV)
+library(party)
+library(partykit)
+library(caret)
+library(CAST)
+library(doParallel)
+```
+
+```{r fold creation}
+set.seed(1234)
+setwd("W:/UR_intern/UR2/SW1-1/Mitarbeiter/Petermann/Veranstaltungen/2023/OpenGeoHub Summerschool Poznan/Hackathon/")
+
+Data<-read_sf("Training data test.gpkg")
+
+#import raster data for background (e.g., DTM)
+pop1000 <- rast("Pop_density_1000.tif")
+
+# folds for 10times repeated 5-fold cross-validation
+# spatial blocking by specified range with random assignment
+spatial_blocks <-list()
+  sb <- cv_spatial(x = Data,
+                   column="sum",
+                   r = pop_1000, #pop dens background
+                    size = 10000, # size of the blocks
+                     k = 5, # k is the number of folds
+                     selection = "random",
+                     iteration = 100 # find evenly dispersed folds
+                     ) 
+  
+  for (k in 1:5){  #number of folds
+    ind <- sb[[3]][,k] #[[3]]access biomodtable; [,i] access fold i
+    ind_train <- which(ind==TRUE, arr.ind = TRUE)
+    spatial_blocks[[k]] <- ind_train  # here 5 is the number of folds
+  }
+
+save(spatial_blocks,file="Cross-validation folds.R")
+```
+
+```{r model building}
+# defining metrics to be evaluated
+mySummary <- function (Data,
+                       lev = NULL,
+                       model = NULL) {
+  out <-
+    c(
+      Metrics::rmse(Data$obs, Data$pred),
+      cor(Data$obs, Data$pred) ^ 2
+    )
+  names(out) <- c("rmse", "R2")
+  out
+}
+
+#control parameters
+fitControl <- trainControl(
+  method = 'repeatedcv',            # cross validation
+  number = 5,
+  repeats=1,
+  savePredictions = 'final',       # saves predictions for optimal tuning parameter
+  summaryFunction=mySummary,  # results summary function
+  index =spatial_blocks                     # indices of training data_10p over 10 folds, repeated 5 times
+)
+
+
+#define tuning Grid
+rfGrid <-  expand.grid(mtry = 2)
+
+
+#remove incomplete data
+st_geometry(Data)<-NULL
+
+Data$tick_norm <-Data$sum/Data$pop5000*100000
+
+#parallel
+registerDoParallel(4)
+getDoParWorkers()
+
+FFS <-ffs(
+  Data[,-c(1,7)],
+  Data$sum,
+  metric = "rmse",
+  maximize=FALSE,
+  method = "cforest",
+  tuneGrid = rfGrid,
+  trControl = fitControl,
+  controls = cforest_unbiased(ntree = 10, trace = TRUE)
+) #mtry automatically set as 5
+
+save(FFS,file="FFS Test.R") 
+
+#hyperparameter grid
+rfGrid<-expand.grid(mtry=seq(2,12,1))
+
+#selected vars
+
+vars<-FFS$selectedvars
+include<-which(names(Data) %in% vars)   # find column numbers with specific column names
+
+#feature selection ffs()
+registerDoParallel(7)
+getDoParWorkers()
+
+Tune <-train(
+  Data[,include],
+  Data$tick_norm,
+  metric = "rmse",
+  maximize=FALSE,
+  method = "cforest",
+  tuneGrid = rfGrid,
+  trControl = fitControl,
+  controls = cforest_unbiased(ntree = 100, trace = TRUE)
+) 
+
+#FINAL model
+mod <- partykit::cforest(tick_norm ~ ., data = Data[,include],ntree=500,mtry=4,trace=TRUE)
+
+save(mod,"Tick model.R")
+
+```

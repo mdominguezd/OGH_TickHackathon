@@ -1,0 +1,115 @@
+---
+title: "Preprocessing predictors"
+author: "Eric Petermann"
+date: "2023-08-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r seed & wd}
+set.seed(1234)
+setwd("W:/UR_intern/UR2/SW1-1/Mitarbeiter/Petermann/Veranstaltungen/2023/OpenGeoHub Summerschool Poznan/Hackathon/")
+```
+
+```{r packages}
+library(dplyr)
+library(sf)
+library(party)
+library(partykit)
+library(tmap)
+library(stars)
+library(readr)
+library(terra)
+```
+
+```{r load data}
+mask_CH <- read_stars("prepared/Mask/Mask.tif")
+
+#population density
+pop_100 <- read_stars("own data/GHS_POP_E2020_GLOBE_R2023A_54009_100_V1_0_R4_C19.tif")
+
+pop_100_mask <- st_warp(src = pop_100, dest = mask_CH, method = 'average',use_gdal = TRUE)
+#write_stars(pop_100_mask,"own data/Pop_density_100.tif")
+
+#convert to rast
+pop_100_mask_rast<-rast(pop_100_mask)
+pop_1000_mask <- terra::focal(x = pop_100_mask_rast, w=11, fun=sum,na.rm=TRUE, na.policy="all", fillvalue=NA,
+                              filename="Pop_density_1000.tif")
+pop_10000_mask<- terra::focal(x = pop_100_mask_rast, w=101, fun=sum,na.rm=TRUE, na.policy="all", 
+                              fillvalue=NA,filename="Pop_density_10000.tif")
+pop_5000_mask<- terra::focal(x = pop_100_mask_rast, w=51, fun=sum,na.rm=TRUE, na.policy="all", 
+                              fillvalue=NA,filename="Pop_density_5000.tif")
+
+
+#land use
+landuse_1_clc <- vect("prepared/Corine_Landcover/CLC_CH_2018.shp")
+landuse_1_clc$CODE_18 <-as.factor(landuse_1_clc$CODE_18)
+landuse_1_rast <- terra::rasterize(x=landuse_1_clc,y=mask_CH, field="",fun=)
+
+landuse_2_arealstat<-rast("prepared/Arealstatistik/AS18_72.tif")
+expert_rating <- read.csv("prepared/Arealstatistik/Arealstatistik_expert-opinion.csv")
+landuse_2_new<-subst(landuse_2_arealstat,from=expert_rating$Category,to=expert_rating$Class,others=0,
+                     filename="landuse_expert_rating.tif")
+```
+
+```{r training data}
+tick <- st_read('prepared/tick_reports_training.gpkg')
+plot(st_geometry(tick))
+
+```
+
+```{r}
+tick$month=format(tick$datetime,'%m')
+
+tick_may = tick[tick$month == "05",]
+
+n_obs = nrow(tick_may)
+
+tick_may_tr = vect(tick_may)
+mask_CH_rast <- rast("prepared/Mask/Mask.tif")
+
+tick_raster <-rasterize(tick_may_tr, mask_CH_rast, fun = 'sum') 
+
+tick_raster_noNA <- subst(tick_raster, NA, 0)
+#writeRaster(tick_raster_noNA,"Ticks_May_NAfilled.tif")
+
+```
+
+```{r training data grid}
+training_data <- st_as_stars(tick_raster)
+training_data_pts <- st_as_sf(training_data,as_points = TRUE)
+
+#load predictors
+pop_100<-read_stars("Pop_density_100.tif")
+pop_1000<-read_stars("Pop_density_1000.tif")
+pop_5000<-read_stars("Pop_density_5000.tif")
+pop_10000<-read_stars("Pop_density_10000.tif")
+landuse_expert<-read_stars("landuse_expert_rating.tif")
+
+
+#extract predictors
+pop_dens_100_extract <- st_extract(pop_100,training_data_pts)
+pop_dens_1000_extract <- st_extract(pop_1000,training_data_pts)
+pop_dens_5000_extract <- st_extract(pop_5000,training_data_pts)
+pop_dens_10000_extract <- st_extract(pop_10000,training_data_pts)
+landuse_expert_extract <- st_extract(landuse_expert,training_data_pts)
+
+
+#assign predictors
+training_data_pts$pop100 <-pop_dens_100_extract$Pop_density_100.tif 
+training_data_pts$pop1000 <-pop_dens_1000_extract$Pop_density_1000.tif 
+training_data_pts$pop5000 <-pop_dens_5000_extract$Pop_density_5000.tif 
+training_data_pts$pop10000 <-pop_dens_10000_extract$Pop_density_10000.tif 
+training_data_pts$landuse_exp <- landuse_expert_extract$landuse_expert_rating.tif
+
+write_sf(training_data_pts,"Training data test.gpkg")
+```
+
+
+```{r estimation grid}
+estimation_grid <- st_as_sf(mask_CH,as_points = TRUE)
+write_sf(estimation_grid,"Estimation_grid.gpkg")
+```

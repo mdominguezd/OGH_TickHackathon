@@ -1,0 +1,85 @@
+---
+title: "prediction"
+author: "Eric Petermann"
+date: "2023-08-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+````{r packages}
+library(GSIF)
+````
+
+```{r mapping}
+#load model
+load("mod.R") 
+
+#load estimation grid
+est_grid <-read_sf("Estimation_grid.gpkg")
+
+tiles <- GSIF::getSpatialTiles(as(est_grid, 'Spatial'), block.x=10000, overlap.percent = 10,return.SpatialPolygons = FALSE)
+tiles.pol <- GSIF::getSpatialTiles(as(est_grid, 'Spatial'), block.x=10000,block.y=10000,overlap.percent = 10,
+                                   return.SpatialPolygons = TRUE)
+tile.pol <- SpatialPolygonsDataFrame(tiles.pol, tiles)
+
+tile <- st_as_sf(tile.pol[50,])
+grid_tile <- st_filter(est_grid,tile)
+
+ggplot() +
+  geom_sf(data =tile) +
+  geom_sf(data = grid_tile) +
+  theme_minimal()
+
+#parallel
+library(foreach)
+n.cores <- parallel::detectCores() -1
+
+#create the cluster
+my.cluster <- parallel::makeCluster(
+  n.cores, 
+  type = "PSOCK"
+)
+#register it to be used by %dopar%
+doParallel::registerDoParallel(cl = my.cluster)
+
+#check if it is registered (optional)
+foreach::getDoParRegistered()
+
+#how many workers are available? (optional)
+foreach::getDoParWorkers()
+foreach(
+  i = c(1:nrow(tiles)),
+  .packages = c("sf","plyr","dplyr","stars","raster")
+) %dopar% {
+
+  out.tif <- paste0("Ticks_Tile_", i, ".tif")
+  if(!file.exists(out.tif)){
+    tile <- st_as_sf(tile.pol[i,])
+    Grid_crop <- st_filter(est_grid,tile)
+    Grid_tile <- as.data.frame(Grid_crop)
+    #test if tile contains only NA
+    NAs<-sum(is.na(Grid_tile)) #if it does not only contain NAs continue with analysis, else next i
+    if(NAs!=length(unlist(Grid_tile))){
+      Grid_crop$pred <- predict(mod,newdata=Grid_tile,type="response")[,1]  #make prediction
+setwd("W:/UR_intern/UR2/SW1-1/Mitarbeiter/Petermann/Veranstaltungen/2023/OpenGeoHub Summerschool Poznan/Hackathon/Tiles/")
+      Ticks.r <- st_rasterize(Grid_crop["pred"], dx = 100, dy=100, xlim=c(st_bbox(Grid_crop)[1]-50, st_bbox(Grid_crop)[3]+50),ylim=c(st_bbox(Grid_crop)[2]-50,st_bbox(Grid_crop)[4]+50),file=out.tif)
+    }}}
+
+
+setwd("W:/UR_intern/UR2/SW1-1/Mitarbeiter/Petermann/Veranstaltungen/2023/OpenGeoHub Summerschool Poznan/Hackathon/Tiles/")
+f <-list.files(pattern = glob2rx("Tick Tile*.tif"))  # "*" is the wildcard
+# turn these into a list of RasterLayer objects  
+r <- lapply(f, FUN=raster) 
+# as you have the arguments as a list call 'merge' with 'do.call'  
+x <- do.call("merge",r) 
+x.stars<-st_as_stars(x)
+
+#normalize result to 0...100
+
+
+setwd("W:/UR_intern/UR2/SW1-1/Mitarbeiter/Petermann/Veranstaltungen/2023/OpenGeoHub Summerschool Poznan/Hackathon/Tiles/")
+#write_stars(x.star,"Ticks May 100.tif",overwrite=TRUE)
+````
