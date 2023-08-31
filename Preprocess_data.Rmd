@@ -1,0 +1,85 @@
+---
+title: "PreProcessing"
+output: html_document
+date: "2023-08-30"
+---
+
+```{r}
+library(terra)
+library(raster)
+library(sf)
+```
+
+```{r}
+mask = rast('prepared/Mask/Mask.tif')
+
+resample_proj = function(rast_1, method = 'average'){
+  x = project(rast_1, crs(mask))
+  resample(x, mask, method = 'average')
+}
+```
+
+## Data stacking
+```{r}
+# Import most of the covariates that will be used
+r = rast('most_covs.tif')
+
+# Exclude useless variables
+exclude_vars = c("SPEEDMIND_X", "SPEEDMIND_Y", "CHELSA_precyy", "CHELSA_sradyy", "CHELSA_taveyy")
+r = r[[!(names(r) %in% exclude_vars)]] 
+
+# include population density
+pop_dens = rast(c('Pop_density_5000.tif','Pop_density_100.tif', 'Pop_density_1000.tif', 'Pop_density_10000.tif'))
+names(pop_dens) = c('pds_5k','pds_100', 'pds_1k', 'pds_10k')
+
+r = c(r, pop_dens)
+
+hike = c('num_hik.tif', 'hiking_paths/dist_hike.tif')
+
+r = c(r, hike)
+
+LC = rast('landuse_expert_rating.tif')
+
+r = c(r, resample_proj(LC))
+
+r = crop(r, mask, mask = TRUE)
+
+norm_tick = r[[1]]/pop_dens['pds_5k']
+norm_tick = norm_tick/minmax(norm_tick)[2,]
+
+y = as.points(norm_tick)
+r = r[[2:40,]]
+
+train_data = extract(r, y)
+```
+
+## Test data
+```{r}
+ras = rast(c('prepared/Weather/SrelM/SrelM_ch01r.swiss.lv95_202101010000_202112010000.nc', 'prepared/Weather/TabsM/TabsM_ch01r.swiss.lv95_202101010000_202112010000.nc', 'prepared/Weather/RhiresM/RhiresM_ch01r.swiss.lv95_202101010000_202112010000.nc'))
+
+for (r in ras){
+  crs(ras) = 'EPSG: 2056'
+
+  ras = subst(ras, NA, na_val)
+
+  # Get May data
+  may = ras[[int_month]]
+  
+  if (nlyr(ras) == 12){
+    if (k == 1){
+      may_stack = may
+    } else {
+      may_stack = c(may_stack, may)
+  }
+  }
+}
+          
+
+```
+
+
+Export data
+```{r}
+write.csv(train_data, 'Train_set.csv')
+```
+
