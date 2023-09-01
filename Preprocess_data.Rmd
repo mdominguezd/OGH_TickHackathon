@@ -51,6 +51,8 @@ y = as.points(norm_tick)
 r = r[[2:40,]]
 
 train_data = extract(r, y)
+
+writeVector(y, 'target.gpkg')
 ```
 
 ## Test data

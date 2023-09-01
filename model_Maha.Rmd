@@ -30,7 +30,6 @@ cov = cov(x[y$Tick_oc != 0,], use = 'complete')
 D_squared = mahalanobis(x, mu, cov, inverted = F)
 
 
-# p1=1-CDF.CHISQ(d-squared,nobsvar) TO GET THE PROBABILITIES
 df = data.frame(D_squared)
 df$id = 1:dim(df)[1]
 
@@ -38,14 +37,8 @@ d = dim(x)[2]
 
 lambda = 2.5 *  exp(- D_squared / 2)
 
-df$P = 1 / (1 + exp(-10*(lambda - 0.5)))
+df$P = 100 * (1 / (1 + exp(-10*(lambda - 0.5))))
   
-  # 1 / sqrt(det(2 * pi * cov)) * exp(- D_squared / 2)
-
-# pchisq(D_squared, dim(x)[2])
-  
-
-# df$P = 1 - pchisq(df$P, dim(x)[2])
 
 target = st_read('target.gpkg')
 target$id = 1:dim(df)[1]
@@ -54,7 +47,7 @@ D_vec = vect(left_join(target, df, by = 'id'))
 
 Mahalonobis = rasterize(D_vec, mask, field = 'P')
 
-writeRaster(Mahalonobis, 'Maha_Dist.tif', overwrite = T)
+writeRaster(Mahalonobis, 'Maha_Dist_P.tif', overwrite = T)
 ```
 
 
