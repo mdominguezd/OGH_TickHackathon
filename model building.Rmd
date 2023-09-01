@@ -25,6 +25,8 @@ set.seed(1234)
 setwd("W:/UR_intern/UR2/SW1-1/Mitarbeiter/Petermann/Veranstaltungen/2023/OpenGeoHub Summerschool Poznan/Hackathon/")
 
 Data<-read_sf("Training data test.gpkg")
+Data<-Data %>% drop_na()
+Data$landuse_exp<-as.factor(Data$landuse_exp)
 
 #import raster data for background (e.g., DTM)
 pop1000 <- rast("Pop_density_1000.tif")
@@ -82,32 +84,35 @@ rfGrid <-  expand.grid(mtry = 2)
 #remove incomplete data
 st_geometry(Data)<-NULL
 
+#normalization of tick occurrence
 Data$tick_norm <-Data$sum/Data$pop5000*100000
 
 #parallel
 registerDoParallel(4)
 getDoParWorkers()
 
+vars_exclude<-c("sum","tick_norm")
+exclude<-which(names(Data) %in% vars_exclude)   # find column numbers with specific column names
+
 FFS <-ffs(
-  Data[,-c(1,7)],
-  Data$sum,
+  Data[,-exclude],
+  Data$tick_norm,
   metric = "rmse",
   maximize=FALSE,
   method = "cforest",
   tuneGrid = rfGrid,
   trControl = fitControl,
-  controls = cforest_unbiased(ntree = 10, trace = TRUE)
+  controls = cforest_unbiased(ntree = 100, trace = TRUE)
 ) #mtry automatically set as 5
 
 save(FFS,file="FFS Test.R") 
 
-#hyperparameter grid
-rfGrid<-expand.grid(mtry=seq(2,12,1))
-
 #selected vars
-
 vars<-FFS$selectedvars
 include<-which(names(Data) %in% vars)   # find column numbers with specific column names
+
+#hyperparameter grid
+rfGrid<-expand.grid(mtry=seq(2,length(vars),1))
 
 #feature selection ffs()
 registerDoParallel(7)

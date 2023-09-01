@@ -45,14 +45,15 @@ pop_5000_mask<- terra::focal(x = pop_100_mask_rast, w=51, fun=sum,na.rm=TRUE, na
 
 
 #land use
-landuse_1_clc <- vect("prepared/Corine_Landcover/CLC_CH_2018.shp")
-landuse_1_clc$CODE_18 <-as.factor(landuse_1_clc$CODE_18)
-landuse_1_rast <- terra::rasterize(x=landuse_1_clc,y=mask_CH, field="",fun=)
+# landuse_1_clc <- vect("prepared/Corine_Landcover/CLC_CH_2018.shp")
+# landuse_1_clc$CODE_18 <-as.factor(landuse_1_clc$CODE_18)
+# landuse_1_rast <- terra::rasterize(x=landuse_1_clc,y=mask_CH, field="CODE18",fun=)
 
 landuse_2_arealstat<-rast("prepared/Arealstatistik/AS18_72.tif")
 expert_rating <- read.csv("prepared/Arealstatistik/Arealstatistik_expert-opinion.csv")
 landuse_2_new<-subst(landuse_2_arealstat,from=expert_rating$Category,to=expert_rating$Class,others=0,
                      filename="landuse_expert_rating.tif")
+
 ```
 
 ```{r training data}
@@ -78,6 +79,12 @@ tick_raster_noNA <- subst(tick_raster, NA, 0)
 
 ```
 
+```{r other predictors}
+other_preds<-rast("most_covs.tif")
+plot(other_preds)
+```
+
+
 ```{r training data grid}
 training_data <- st_as_stars(tick_raster)
 training_data_pts <- st_as_sf(training_data,as_points = TRUE)
@@ -88,14 +95,49 @@ pop_1000<-read_stars("Pop_density_1000.tif")
 pop_5000<-read_stars("Pop_density_5000.tif")
 pop_10000<-read_stars("Pop_density_10000.tif")
 landuse_expert<-read_stars("landuse_expert_rating.tif")
-
+elev<-other_preds$elev
+temp<-other_preds$temperature
+prec_may<-other_preds$precipitation
+rel_hum<-other_preds$rel_hum
+prec_annual<-other_preds$CHELSA_precyy
+solrad_annual<-other_preds$CHELSA_sradyy
+temp_annual<-other_preds$CHELSA_taveyy
+ndvi_mean<-other_preds$ClimHerb_ndviMEAN
+forest_q25<-other_preds$MoGLI_ForestQ25
+forest_q95<-other_preds$MoGLI_ForestQ95
+saga_TWI<-other_preds$SAGA_TWI
+build_dist<-other_preds$SPEEDMIND_BuildDist
+water_dist<-other_preds$SPEEDMIND_WaterDist
+soil_moisture<-other_preds$SPEEDMIND_SoilF
+soil_moisture_var<-other_preds$SPEEDMIND_SoilW
+soil_ph<-other_preds$SPEEDMIND_SoilR
+hike_dist<-rast("dist_hike.tif")
+hike_num<-rast("num_hik.tif")
 
 #extract predictors
 pop_dens_100_extract <- st_extract(pop_100,training_data_pts)
 pop_dens_1000_extract <- st_extract(pop_1000,training_data_pts)
 pop_dens_5000_extract <- st_extract(pop_5000,training_data_pts)
 pop_dens_10000_extract <- st_extract(pop_10000,training_data_pts)
-landuse_expert_extract <- st_extract(landuse_expert,training_data_pts)
+elev_extract <- terra::extract(elev,training_data_pts)
+temp_extract <-  terra::extract(temp,training_data_pts)
+prec_may_extract <-  terra::extract(prec_may,training_data_pts)
+rel_hum_extract <-  terra::extract(rel_hum,training_data_pts)
+prec_annual_extract <-  terra::extract(prec_annual,training_data_pts)
+solrad_annual_extract <-  terra::extract(solrad_annual,training_data_pts)
+temp_annual_extract <-  terra::extract(temp_annual,training_data_pts)
+ndvi_mean_extract <-  terra::extract(ndvi_mean,training_data_pts)
+forest_q25_extract <-  terra::extract(forest_q25,training_data_pts)
+forest_q95_extract <-  terra::extract(forest_q95,training_data_pts)
+saga_twi_extract <-  terra::extract(saga_TWI,training_data_pts)
+build_dist_extract <-  terra::extract(build_dist,training_data_pts)
+water_dist_extract <-  terra::extract(water_dist,training_data_pts)
+landuse_expert_extract <-  terra::extract(landuse_expert,training_data_pts)
+soil_moisture_extract <-  terra::extract(soil_moisture,training_data_pts)
+soil_moisture_var_extract <-  terra::extract(soil_moisture_var,training_data_pts)
+soil_ph_extract <-  terra::extract(soil_ph,training_data_pts)
+hike_num_extract <-  terra::extract(hike_num,training_data_pts)
+hike_dist_extract <-  terra::extract(hike_dist,training_data_pts)
 
 
 #assign predictors
@@ -103,13 +145,109 @@ training_data_pts$pop100 <-pop_dens_100_extract$Pop_density_100.tif
 training_data_pts$pop1000 <-pop_dens_1000_extract$Pop_density_1000.tif 
 training_data_pts$pop5000 <-pop_dens_5000_extract$Pop_density_5000.tif 
 training_data_pts$pop10000 <-pop_dens_10000_extract$Pop_density_10000.tif 
-training_data_pts$landuse_exp <- landuse_expert_extract$landuse_expert_rating.tif
+training_data_pts$landuse_exp <- as.factor(landuse_expert_extract$landuse_expert_rating.tif)
+training_data_pts$elev <-elev_extract$elev
+training_data_pts$temp <-temp_extract$temperature
+training_data_pts$prec_may <-prec_may_extract$precipitation
+training_data_pts$rel_hum <-rel_hum_extract$rel_hum
+training_data_pts$prec_annual <-prec_annual_extract$CHELSA_precyy
+training_data_pts$solrad_annual <-solrad_annual_extract$CHELSA_sradyy
+training_data_pts$temp_annual <-temp_annual_extract$CHELSA_taveyy
+training_data_pts$ndvi_mean <-ndvi_mean_extract$ClimHerb_ndviMEAN
+training_data_pts$forest_q25 <-forest_q25_extract$MoGLI_ForestQ25
+training_data_pts$forest_q95 <-forest_q95_extract$MoGLI_ForestQ95
+training_data_pts$saga_twi <-saga_twi_extract$SAGA_TWI
+training_data_pts$build_dist <-build_dist_extract$SPEEDMIND_BuildDist
+training_data_pts$water_dist <-water_dist_extract$SPEEDMIND_WaterDist
+training_data_pts$soil_moisture <-soil_moisture_extract$SPEEDMIND_SoilF
+training_data_pts$soil_moisture_var <-soil_moisture_var_extract$SPEEDMIND_SoilW
+training_data_pts$soil_ph <-soil_ph_extract$SPEEDMIND_SoilR
+training_data_pts$hike_dist <-hike_dist_extract$presence
+training_data_pts$hike_num <-hike_num_extract$focal_sum
 
-write_sf(training_data_pts,"Training data test.gpkg")
+write_sf(training_data_pts,"Training data test.gpkg",append=FALSE)
 ```
 
 
 ```{r estimation grid}
+mask_CH <- read_stars("prepared/Mask/Mask.tif")
 estimation_grid <- st_as_sf(mask_CH,as_points = TRUE)
-write_sf(estimation_grid,"Estimation_grid.gpkg")
+
+pop_100<-rast("Pop_density_100.tif")
+pop_1000<-rast("Pop_density_1000.tif")
+pop_5000<-rast("Pop_density_5000.tif")
+pop_10000<-rast("Pop_density_10000.tif")
+landuse_expert<-rast("landuse_expert_rating.tif")
+elev<-other_preds$elev
+temp<-other_preds$temperature
+prec_may<-other_preds$precipitation
+rel_hum<-other_preds$rel_hum
+prec_annual<-other_preds$CHELSA_precyy
+solrad_annual<-other_preds$CHELSA_sradyy
+temp_annual<-other_preds$CHELSA_taveyy
+ndvi_mean<-other_preds$ClimHerb_ndviMEAN
+forest_q25<-other_preds$MoGLI_ForestQ25
+forest_q95<-other_preds$MoGLI_ForestQ95
+saga_TWI<-other_preds$SAGA_TWI
+build_dist<-other_preds$SPEEDMIND_BuildDist
+water_dist<-other_preds$SPEEDMIND_WaterDist
+soil_moisture<-other_preds$SPEEDMIND_SoilF
+soil_moisture_var<-other_preds$SPEEDMIND_SoilW
+soil_ph<-other_preds$SPEEDMIND_SoilR
+hike_dist<-rast("dist_hike.tif")
+hike_num<-rast("num_hik.tif")
+
+
+#extract predictors
+pop_dens_100_extract <-  terra::extract(pop_100,estimation_grid)
+pop_dens_1000_extract <-  terra::extract(pop_1000,estimation_grid)
+pop_dens_5000_extract <-  terra::extract(pop_5000,estimation_grid)
+pop_dens_10000_extract <-  terra::extract(pop_10000,estimation_grid)
+elev_extract <- terra::extract(elev,estimation_grid)
+temp_extract <-  terra::extract(temp,estimation_grid)
+prec_may_extract <-  terra::extract(prec_may,estimation_grid)
+rel_hum_extract <-  terra::extract(rel_hum,estimation_grid)
+prec_annual_extract <-  terra::extract(prec_annual,estimation_grid)
+solrad_annual_extract <-  terra::extract(solrad_annual,estimation_grid)
+temp_annual_extract <-  terra::extract(temp_annual,estimation_grid)
+ndvi_mean_extract <-  terra::extract(ndvi_mean,estimation_grid)
+forest_q25_extract <-  terra::extract(forest_q25,estimation_grid)
+forest_q95_extract <-  terra::extract(forest_q95,estimation_grid)
+saga_twi_extract <-  terra::extract(saga_TWI,estimation_grid)
+build_dist_extract <-  terra::extract(build_dist,estimation_grid)
+water_dist_extract <-  terra::extract(water_dist,estimation_grid)
+landuse_expert_extract <-  terra::extract(landuse_expert,estimation_grid)
+soil_moisture_extract <-  terra::extract(soil_moisture,estimation_grid)
+soil_moisture_var_extract <-  terra::extract(soil_moisture_var,estimation_grid)
+soil_ph_extract <-  terra::extract(soil_ph,estimation_grid)
+hike_num_extract <-  terra::extract(hike_num,estimation_grid)
+hike_dist_extract <-  terra::extract(hike_dist,estimation_grid)
+
+#assign predictors
+estimation_grid$pop100 <-pop_dens_100_extract$Pop_density_100
+estimation_grid$pop1000 <-pop_dens_1000_extract$focal_sum
+estimation_grid$pop5000 <-pop_dens_5000_extract$focal_sum
+estimation_grid$pop10000 <-pop_dens_10000_extract$focal_sum
+estimation_grid$landuse_exp <- as.factor(landuse_expert_extract$AS18_72)
+estimation_grid$elev <-elev_extract$elev
+estimation_grid$temp <-temp_extract$temperature
+estimation_grid$prec_may <-prec_may_extract$precipitation
+estimation_grid$rel_hum <-rel_hum_extract$rel_hum
+estimation_grid$prec_annual <-prec_annual_extract$CHELSA_precyy
+estimation_grid$solrad_annual <-solrad_annual_extract$CHELSA_sradyy
+estimation_grid$temp_annual <-temp_annual_extract$CHELSA_taveyy
+estimation_grid$ndvi_mean <-ndvi_mean_extract$ClimHerb_ndviMEAN
+estimation_grid$forest_q25 <-forest_q25_extract$MoGLI_ForestQ25
+estimation_grid$forest_q95 <-forest_q95_extract$MoGLI_ForestQ95
+estimation_grid$saga_twi <-saga_twi_extract$SAGA_TWI
+estimation_grid$build_dist <-build_dist_extract$SPEEDMIND_BuildDist
+estimation_grid$water_dist <-water_dist_extract$SPEEDMIND_WaterDist
+estimation_grid$soil_moisture <-soil_moisture_extract$SPEEDMIND_SoilF
+estimation_grid$soil_moisture_var <-soil_moisture_var_extract$SPEEDMIND_SoilW
+estimation_grid$soil_ph <-soil_ph_extract$SPEEDMIND_SoilR
+estimation_grid$hike_dist <-hike_dist_extract$presence
+estimation_grid$hike_num <-hike_num_extract$focal_sum
+summary(estimation_grid)
+
+write_sf(estimation_grid,"Estimation_grid_new.gpkg",append=FALSE)
 ```

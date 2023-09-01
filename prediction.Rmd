@@ -11,21 +11,34 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ````{r packages}
 library(GSIF)
+library(sf)
+library(raster)
+library(party)
+library(partykit)
+library(stars)
+library(sp)
 ````
 
 ```{r mapping}
-#load model
-load("mod.R") 
+ #load model
+setwd("W:/UR_intern/UR2/SW1-1/Mitarbeiter/Petermann/Veranstaltungen/2023/OpenGeoHub Summerschool Poznan/Hackathon/")
+
+load("Tick model_party.R") 
 
 #load estimation grid
-est_grid <-read_sf("Estimation_grid.gpkg")
+est_grid <-read_sf("Estimation_grid_new.gpkg")
+est_grid$landuse_exp<-as.factor(est_grid$landuse_exp)
 
-tiles <- GSIF::getSpatialTiles(as(est_grid, 'Spatial'), block.x=10000, overlap.percent = 10,return.SpatialPolygons = FALSE)
-tiles.pol <- GSIF::getSpatialTiles(as(est_grid, 'Spatial'), block.x=10000,block.y=10000,overlap.percent = 10,
+#est_grid.test<-est_grid
+#training_data <- read_sf("Training data test.gpkg")
+
+tiles <- GSIF::getSpatialTiles(as(est_grid, 'Spatial'), block.x=3000, overlap.percent = 10, return.SpatialPolygons = FALSE)
+tiles.pol <- GSIF::getSpatialTiles(as(est_grid, 'Spatial'), block.x=3000,block.y=3000,overlap.percent = 10,
                                    return.SpatialPolygons = TRUE)
 tile.pol <- SpatialPolygonsDataFrame(tiles.pol, tiles)
 
-tile <- st_as_sf(tile.pol[50,])
+i=5000
+tile <- st_as_sf(tile.pol[i,])
 grid_tile <- st_filter(est_grid,tile)
 
 ggplot() +
@@ -33,9 +46,15 @@ ggplot() +
   geom_sf(data = grid_tile) +
   theme_minimal()
 
+
+load("FFS Test.R")
+#selected vars
+vars<-FFS$selectedvars
+include<-which(names(est_grid) %in% vars)   # find column numbers with specific column names
+
 #parallel
 library(foreach)
-n.cores <- parallel::detectCores() -1
+n.cores <- (parallel::detectCores())/2 -1
 
 #create the cluster
 my.cluster <- parallel::makeCluster(
@@ -55,31 +74,45 @@ foreach(
   .packages = c("sf","plyr","dplyr","stars","raster")
 ) %dopar% {
 
-  out.tif <- paste0("Ticks_Tile_", i, ".tif")
+  out.tif <- paste0("Ticks500_Tile_", i, ".tif")
   if(!file.exists(out.tif)){
     tile <- st_as_sf(tile.pol[i,])
-    Grid_crop <- st_filter(est_grid,tile)
-    Grid_tile <- as.data.frame(Grid_crop)
+    Grid_crop <- st_filter(estimation_grid,tile)
+    Grid_tile <- Grid_crop
+    st_geometry(Grid_tile)<-NULL
+    Grid_tile_noNA<-Grid_tile[complete.cases(Grid_tile),]
+    Grid_crop<-Grid_crop[complete.cases(Grid_tile),]
     #test if tile contains only NA
-    NAs<-sum(is.na(Grid_tile)) #if it does not only contain NAs continue with analysis, else next i
+    NAs<-sum(is.na(Grid_tile)) #if it does not only contain NAs continue with analysis, else next 
     if(NAs!=length(unlist(Grid_tile))){
-      Grid_crop$pred <- predict(mod,newdata=Grid_tile,type="response")[,1]  #make prediction
-setwd("W:/UR_intern/UR2/SW1-1/Mitarbeiter/Petermann/Veranstaltungen/2023/OpenGeoHub Summerschool Poznan/Hackathon/Tiles/")
-      Ticks.r <- st_rasterize(Grid_crop["pred"], dx = 100, dy=100, xlim=c(st_bbox(Grid_crop)[1]-50, st_bbox(Grid_crop)[3]+50),ylim=c(st_bbox(Grid_crop)[2]-50,st_bbox(Grid_crop)[4]+50),file=out.tif)
+      Grid_crop$pred <- predict(mod,newdata=Grid_tile_noNA,type="response")[,1]  #make prediction
+      Ticks.r <- st_rasterize(Grid_crop["pred"], dx = 500, dy=500, xlim=c(st_bbox(Grid_crop)[1]-250,
+        st_bbox(Grid_crop)[3]+250),ylim=c(st_bbox(Grid_crop)[2]-250,st_bbox(Grid_crop)[4]+250),
+        file=out.tif)
     }}}
 
 
+
 setwd("W:/UR_intern/UR2/SW1-1/Mitarbeiter/Petermann/Veranstaltungen/2023/OpenGeoHub Summerschool Poznan/Hackathon/Tiles/")
-f <-list.files(pattern = glob2rx("Tick Tile*.tif"))  # "*" is the wildcard
+f <-list.files(pattern = glob2rx("Ticks500_Tile*.tif"))  # "*" is the wildcard
 # turn these into a list of RasterLayer objects  
 r <- lapply(f, FUN=raster) 
 # as you have the arguments as a list call 'merge' with 'do.call'  
 x <- do.call("merge",r) 
 x.stars<-st_as_stars(x)
 
+plot(x.stars)
 #normalize result to 0...100
+max<-max(x.stars$layer,na.rm=TRUE)
+min<-min(x.stars$layer,na.rm=TRUE)
+hazard<-(x.stars["layer"]-min)/(max-min)*100
+plot(hazard)
 
+#Data$tick_norm <-Data$sum/Data$pop5000*100000
 
+risk<-x.stars["layer"]/100000*estimation_grid$pop5000
+
+pop_rast<-extract()
 setwd("W:/UR_intern/UR2/SW1-1/Mitarbeiter/Petermann/Veranstaltungen/2023/OpenGeoHub Summerschool Poznan/Hackathon/Tiles/")
-#write_stars(x.star,"Ticks May 100.tif",overwrite=TRUE)
+write_stars(hazard,"Ticks May hazard.tif",overwrite=TRUE)
 ````
