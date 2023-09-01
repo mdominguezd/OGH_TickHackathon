@@ -1,6 +1,6 @@
-# OGH_SS_Hackathon 2023
+# Open Geo Hub Summer School Hackathon 2023
 
-Repository created for reporting the results obtained for the Open Geo Hub Summer School Hackathon 2023.
+Repository created for reporting the results obtained for the Open Geo Hub Summer School Hackathon 2023. 
 
 ## Target variable
 The approach taken to get the results was to aggregate the data of tick occurrences for the month of may in a 100mx100m resolution grid which was then normalized based on the population density. The values in this grid where considered to be the target value.
@@ -22,6 +22,9 @@ Taking all of the covariates that were retrieved a forward feature selection pro
 
 ## Model
 Finally, a random forest model was fitted to the data and the final raster is calculated and saved to `Ticks May risk.tif`.
+
+### Plan B
+An alternative for the random forest model was done. Probabilities of tick occurrence where calculated using the mahalanobis distance using the three variables that were significant. The code for this approach can be found in `model_Maha.Rmd`
 
 
 ### Pre-requirements
