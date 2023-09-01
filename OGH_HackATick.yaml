@@ -1,0 +1,10 @@
+name: mgi
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python
+  - jupyter
+  - jupyterlab
+  - osmnx
+  - geopandas
